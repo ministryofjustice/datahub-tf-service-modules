@@ -1,0 +1,105 @@
+---
+description: |
+  Terraform Plan apply
+executor:
+  name: terraform-aws
+  tag: << parameters.tag >>
+  class: << parameters.class >>
+parameters:
+  executor:
+    description: The name of custom executor to use
+    type: executor
+    default: terraform
+  tag:
+    description: Executor Tag
+    type: string
+    default: "v1.10.0-awscliv1-1.0.2"
+  environment:
+    type: string
+    default: dev
+  class:
+    description: Executor Class
+    type: string
+    default: medium
+  notify_slack:
+    type: boolean
+    default: false
+    description: When true, updates slack channel
+  channel:
+    description: Slack Channel
+    type: string
+    default: dwh_cicd_alerts
+  release_channel:
+    description: Slack Channel
+    type: string
+    default: dwh_release_alerts
+  code_path:
+    description: Path to Code
+    type: string
+    default: "terraform"
+  state_bucket:
+    description: State Bucket Prefix
+    type: string
+    default: 'dwh-terraform-state'
+  dynamo_tab:
+    description: Dynamo DB Tab Prefix
+    type: string
+    default: 'dwh-terraform-state'
+  state_key:
+    description: State Key to be used
+    type: string
+    default: 'dataworks-hub-applications'
+  region:
+    description: AWS Region
+    type: string
+    default: eu-west-2
+  profile:
+    description: AWS Profile
+    type: string
+    default: "cicd_profile"
+  apply_ready:
+    description: Check if Terraform Code is ready for Apply
+    type: boolean
+    default: true
+  is_mock:
+    description: Destroy Resources if its a Mock
+    type: boolean
+    default: false
+  deploy_to_dev:
+    type: boolean
+    default: true
+    description: When true, Deploys to Dev
+  deploy_to_test:
+    type: boolean
+    default: false
+    description: When true, Deploys to Test
+  deploy_to_preprod:
+    type: boolean
+    default: false
+    description: When true, Deploys to Pre-Prod
+steps:
+- checkout
+- terraform_env_setup:
+    region: << parameters.region >>
+    env: << parameters.environment >>
+- store/recall:
+    env_var: ENV_TYPE
+- terraform/init:
+    backend: true
+    backend_config: "bucket=<< parameters.state_bucket >>-$ENV_TYPE, key=dataworks-hub/<< parameters.state_key >>, region=<< parameters.region >>"
+    path: << parameters.code_path >>
+- when:
+    condition: << parameters.apply_ready >>
+    steps:
+    - terraform/apply:
+        backend_config: "bucket=<< parameters.state_bucket >>-$ENV_TYPE, key=dataworks-hub/<< parameters.state_key >>, region=<< parameters.region >>"
+        var_file: config/$ENV_TYPE.tfvars
+        path: << parameters.code_path >>
+- when:
+    condition: << parameters.notify_slack >>
+    steps:
+    - notify_slack_error:
+        channel: << parameters.channel >>
+    - notify_slack_success:
+        channel: << parameters.channel >>
+        template: TERRAFORM_SUCCESS

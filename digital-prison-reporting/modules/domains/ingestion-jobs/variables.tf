@@ -33,6 +33,12 @@ variable "glue_batch_job_short_name" {
   type        = string
 }
 
+variable "glue_batch_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
+}
+
 variable "glue_batch_description" {
   description = "Job Description"
   default     = ""
@@ -176,6 +182,12 @@ variable "glue_cdc_job_short_name" {
   description = "Name of the Glue CDC Job"
   default     = ""
   type        = string
+}
+
+variable "glue_cdc_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
 }
 
 variable "glue_cdc_description" {
@@ -324,6 +336,12 @@ variable "glue_unprocessed_raw_files_check_job_short_name" {
   type        = string
 }
 
+variable "glue_unprocessed_raw_files_check_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
+}
+
 variable "glue_unprocessed_raw_files_check_description" {
   description = "Job Description"
   default     = ""
@@ -464,6 +482,12 @@ variable "glue_archive_job_short_name" {
   type        = string
 }
 
+variable "glue_archive_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
+}
+
 variable "glue_archive_description" {
   description = "Job Description"
   default     = ""
@@ -573,6 +597,115 @@ variable "glue_archive_arguments" {
   default = {}
 }
 
+# Create Archive Backfill Job
+variable "setup_archive_backfill_job" {
+  description = "Enable Job which creates the archive backfill, True or False"
+  type        = bool
+  default     = false
+}
+
+variable "glue_archive_backfill_job_role" {
+  type        = bool
+  default     = false
+  description = "(Optional) Create AWS IAM role associated with the archive backfill job"
+}
+
+variable "glue_archive_backfill_job_name" {
+  description = "Name of the Glue job which creates the archive backfill"
+  type        = string
+}
+
+variable "glue_archive_backfill_job_short_name" {
+  description = "Short name of the Glue job which creates the archive backfill"
+  type        = string
+}
+
+variable "glue_archive_backfill_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
+}
+
+variable "glue_archive_backfill_job_description" {
+  description = "Description for the archive backfill job"
+  type        = string
+}
+
+variable "glue_archive_backfill_job_create_sec_conf" {
+  type        = bool
+  default     = false
+  description = "(Optional) Create AWS Glue Security Configuration associated with the archive backfill job"
+}
+
+variable "glue_archive_backfill_job_language" {
+  type        = string
+  default     = "python"
+  description = "(Optional) The script programming language"
+
+  validation {
+    condition     = contains(["scala", "python"], var.glue_archive_backfill_job_language)
+    error_message = "Accepts a value of 'scala' or 'python'"
+  }
+}
+
+variable "glue_archive_backfill_job_temp_dir" {
+  type        = string
+  default     = null
+  description = "(Optional) Specifies an Amazon S3 path to a bucket to be used as a temporary directory for the job"
+}
+
+variable "glue_archive_backfill_job_spark_event_logs" {
+  type        = string
+  default     = null
+  description = "(Optional) Specifies an Amazon S3 path to a bucket that can be used as a Spark Event Logs directory for the job"
+}
+
+variable "glue_archive_backfill_job_enable_cont_log_filter" {
+  type        = bool
+  default     = false
+  description = "(Optional) Specifies a standard filter or no filter when you create or edit a job enabled for continuous logging"
+}
+
+variable "glue_archive_backfill_job_execution_class" {
+  default     = "STANDARD"
+  description = "Execution CLass Standard or FLex to be used by the archive backfill job"
+  type        = string
+}
+
+variable "glue_archive_backfill_job_additional_policies" {
+  type        = string
+  default     = ""
+  description = "(Optional) The list of Policies used for teh archive backfill job"
+}
+
+variable "glue_archive_backfill_job_worker_type" {
+  type        = string
+  default     = "G.1X"
+  description = "(Optional) The type of predefined worker that is allocated when the archive backfill job runs"
+
+  validation {
+    condition     = contains(["G.1X", "G.2X"], var.glue_archive_backfill_job_worker_type)
+    error_message = "Accepts a value of G.1X, G.2X, G.4X, or G.8X"
+  }
+}
+
+variable "glue_archive_backfill_job_num_workers" {
+  type        = number
+  default     = 2
+  description = "(Optional) The number of workers of a defined workerType that are allocated when the archive backfill job runs"
+}
+
+variable "glue_archive_backfill_job_max_concurrent" {
+  type        = number
+  default     = 1
+  description = "(Optional) The number of concurrent executions of the archive backfill job"
+}
+
+variable "glue_archive_backfill_job_arguments" {
+  type    = map(any)
+  default = {}
+}
+
 # Create Reload Diff Job
 variable "setup_create_reload_diff_job" {
   description = "Enable Job which creates the reload diff, True or False"
@@ -596,6 +729,12 @@ variable "glue_create_reload_diff_job_short_name" {
   description = "Short name of the Glue Create Reload Diff Job"
   default     = ""
   type        = string
+}
+
+variable "glue_create_reload_diff_job_glue_version" {
+  type        = string
+  default     = "4.0"
+  description = "(Optional) The version of glue to use."
 }
 
 variable "glue_create_reload_diff_job_description" {
@@ -671,7 +810,6 @@ variable "glue_create_reload_diff_job_spark_event_logs" {
   description = "(Optional) Specifies an Amazon S3 path to a bucket that can be used as a Spark Event Logs directory for the job."
 }
 
-
 variable "s3_kms_arn" {
   type        = string
   default     = ""
@@ -724,7 +862,7 @@ variable "reporting_lambda_code_s3_key" {
 variable "step_function_notification_lambda_handler" {
   description = "Notification Lambda Handler"
   type        = string
-  default     = "modulardata.dataworks.lambda.StepFunctionDMSNotificationLambda::handleRequest"
+  default     = "uk.gov.justice.digital.lambda.StepFunctionDMSNotificationLambda::handleRequest"
 }
 
 variable "step_function_notification_lambda_runtime" {

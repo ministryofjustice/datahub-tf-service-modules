@@ -30,6 +30,21 @@ locals {
     }
   }
 
+  stop_dms_cdc_replication_task = {
+    "StepName" : "Stop DMS CDC Replication Task",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.stop_dms_task_job,
+        "Arguments" : {
+          "--dataworks.dms.replication.task.id" : var.cdc_replication_task_id
+        }
+      },
+      "Next" : local.check_all_pending_files_have_been_processed.StepName
+    }
+  }
+
   stop_dms_replication_task = {
     "StepName" : "Stop DMS Replication Task",
     "StepDefinition" : {
@@ -41,19 +56,20 @@ locals {
           "--dataworks.dms.replication.task.id" : var.replication_task_id
         }
       },
-      "Next" : var.batch_only ? local.update_hive_tables.StepName : local.stop_glue_streaming_job.StepName
+      "Next" : var.batch_only ? local.update_hive_tables.StepName : local.check_all_pending_files_have_been_processed.StepName
     }
   }
 
-  stop_dms_cdc_replication_task = {
-    "StepName" : "Stop DMS CDC Replication Task",
+  check_all_pending_files_have_been_processed = {
+    "StepName" : "Check All Pending Files Have Been Processed",
     "StepDefinition" : {
       "Type" : "Task",
       "Resource" : "arn:aws:states:::glue:startJobRun.sync",
       "Parameters" : {
-        "JobName" : var.stop_dms_task_job,
+        "JobName" : var.glue_unprocessed_raw_files_check_job,
         "Arguments" : {
-          "--dataworks.dms.replication.task.id" : var.cdc_replication_task_id
+          "--dataworks.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
+          "--dataworks.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts)
         }
       },
       "Next" : local.stop_glue_streaming_job.StepName
@@ -71,6 +87,30 @@ locals {
           "--dataworks.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
         }
       },
+      "Next" : local.archive_remaining_raw_files.StepName
+    }
+  }
+
+  archive_remaining_raw_files = {
+    "StepName" : "Archive Remaining Raw Files",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_file_transfer_job,
+        "Arguments" : {
+          "--dataworks.file.transfer.source.bucket" : var.s3_raw_bucket_id,
+          "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
+          "--dataworks.file.transfer.delete.copied.files" : "true",
+          "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+          "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+          "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+          "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+          "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+          "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
       "Next" : local.update_hive_tables.StepName
     }
   }
@@ -83,6 +123,78 @@ locals {
       "Parameters" : {
         "JobName" : var.glue_hive_table_creation_jobname,
         "Arguments" : {
+          "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : var.enable_archive_backfill ? local.delete_existing_backfill_data.StepName : local.prepare_temp_reload_bucket_data.StepName
+    }
+  }
+
+  delete_existing_backfill_data = {
+    "StepName" : "Delete Existing Backfill Data",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_data_deletion_job,
+        "Arguments" : {
+          "--dataworks.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.source.prefix" : var.archive_backfill_folder,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.create_backfilled_archive_data.StepName
+    }
+  }
+
+  create_backfilled_archive_data = {
+    "StepName" : "Create Backfilled Archive Data",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.archive_backfill_job
+      },
+      "Next" : local.empty_archive_data.StepName
+    }
+  }
+
+  empty_archive_data = {
+    "StepName" : "Empty Archive Data",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_data_deletion_job,
+        "Arguments" : {
+          "--dataworks.file.deletion.buckets" : var.s3_raw_archive_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.move_backfilled_data_to_archive_bucket.StepName
+    }
+  }
+
+  move_backfilled_data_to_archive_bucket = {
+    "StepName" : "Move Backfilled Archive Data to Archive Bucket",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_file_transfer_job,
+        "Arguments" : {
+          "--dataworks.file.transfer.source.bucket" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
+          "--dataworks.file.transfer.retention.period.amount" : "0",
+          "--dataworks.file.transfer.delete.copied.files" : "true",
+          "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+          "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+          "--dataworks.file.source.prefix" : var.archive_backfill_folder,
+          "--dataworks.allowed.s3.file.regex" : "(?i).+.parquet$",
+          "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+          "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+          "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
           "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
           "--dataworks.config.key" : var.domain
         }
@@ -144,39 +256,23 @@ locals {
           "--dataworks.config.key" : var.domain
         }
       },
-      "Next" : var.file_transfer_in ? local.empty_landing_processing_raw_archive_structured_and_curated_data.StepName : local.empty_raw_archive_structured_and_curated_data.StepName
+      "Next" : var.file_transfer_in ? local.empty_landing_processing_raw_structured_and_curated_data.StepName : local.empty_raw_structured_and_curated_data.StepName
     }
   }
 
-  empty_raw_archive_structured_and_curated_data = {
-    "StepName" : "Empty Raw, Archive, Structured and Curated Data",
+  empty_landing_processing_raw_structured_and_curated_data = {
+    "StepName" : "Empty Landing Processing, Raw, Structured and Curated Data",
     "StepDefinition" : {
       "Type" : "Task",
       "Resource" : "arn:aws:states:::glue:startJobRun.sync",
       "Parameters" : {
         "JobName" : var.glue_s3_data_deletion_job,
         "Arguments" : {
-          "--dataworks.file.deletion.buckets" : "${var.s3_raw_bucket_id},${var.s3_raw_archive_bucket_id},${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
+          "--dataworks.file.deletion.buckets" : "${var.s3_landing_processing_bucket_id},${var.s3_raw_bucket_id},${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
           "--dataworks.config.key" : var.domain
         }
       },
-      "Next" : local.start_dms_replication_task.StepName
-    }
-  }
-
-  empty_landing_processing_raw_archive_structured_and_curated_data = {
-    "StepName" : "Empty Landing Processing, Raw, Archive, Structured and Curated Data",
-    "StepDefinition" : {
-      "Type" : "Task",
-      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
-      "Parameters" : {
-        "JobName" : var.glue_s3_data_deletion_job,
-        "Arguments" : {
-          "--dataworks.file.deletion.buckets" : "${var.s3_landing_processing_bucket_id},${var.s3_raw_bucket_id},${var.s3_raw_archive_bucket_id},${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
-          "--dataworks.config.key" : var.domain
-        }
-      },
-      "Next" : var.file_transfer_in ? local.invoke_landing_zone_antivirus_check_lambda.StepName : local.start_dms_replication_task.StepName
+      "Next" : local.invoke_landing_zone_antivirus_check_lambda.StepName
     }
   }
 
@@ -262,19 +358,19 @@ locals {
     }
   }
 
-  set_dms_cdc_replication_task_start_time = {
-    "StepName" : "Set DMS CDC Replication Task Start Time",
+  empty_raw_structured_and_curated_data = {
+    "StepName" : "Empty Raw, Structured and Curated Data",
     "StepDefinition" : {
       "Type" : "Task",
       "Resource" : "arn:aws:states:::glue:startJobRun.sync",
       "Parameters" : {
-        "JobName" : var.set_cdc_dms_start_time_job,
+        "JobName" : var.glue_s3_data_deletion_job,
         "Arguments" : {
-          "--dataworks.dms.replication.task.id" : var.replication_task_id,
-          "--dataworks.cdc.dms.replication.task.id" : var.cdc_replication_task_id
+          "--dataworks.file.deletion.buckets" : "${var.s3_raw_bucket_id},${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
+          "--dataworks.config.key" : var.domain
         }
       },
-      "Next" : local.run_glue_batch_job.StepName
+      "Next" : local.start_dms_replication_task.StepName
     }
   }
 
@@ -322,6 +418,22 @@ locals {
     }
   }
 
+  set_dms_cdc_replication_task_start_time = {
+    "StepName" : "Set DMS CDC Replication Task Start Time",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.set_cdc_dms_start_time_job,
+        "Arguments" : {
+          "--dataworks.dms.replication.task.id" : var.replication_task_id,
+          "--dataworks.cdc.dms.replication.task.id" : var.cdc_replication_task_id
+        }
+      },
+      "Next" : local.run_glue_batch_job.StepName
+    }
+  }
+
   run_glue_batch_job = {
     "StepName" : "Run Glue Batch Job",
     "StepDefinition" : {
@@ -334,19 +446,76 @@ locals {
           "--dataworks.config.key" : var.domain
         }
       },
-      "Next" : local.archive_raw_data.StepName
+      "Next" : local.delete_existing_reload_diffs.StepName
     }
   }
 
-  archive_raw_data = {
-    "StepName" : "Archive Raw Data",
+  delete_existing_reload_diffs = {
+    "StepName" : "Delete Existing Reload Diffs",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_data_deletion_job,
+        "Arguments" : {
+          "--dataworks.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.source.prefix" : var.reload_diff_folder,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.run_create_reload_diff_batch_job.StepName
+    }
+  }
+
+  run_create_reload_diff_batch_job = {
+    "StepName" : "Run Create Reload Diff Batch Job",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_create_reload_diff_job
+      },
+      "Next" : local.move_reload_diffs_toInsert_to_archive_bucket.StepName
+    }
+  }
+
+  move_reload_diffs_toInsert_to_archive_bucket = {
+    "StepName" : "Move Reload Diffs toInsert to Archive Bucket",
     "StepDefinition" : {
       "Type" : "Task",
       "Resource" : "arn:aws:states:::glue:startJobRun.sync",
       "Parameters" : {
         "JobName" : var.glue_s3_file_transfer_job,
         "Arguments" : {
-          "--dataworks.file.transfer.source.bucket" : var.s3_raw_bucket_id,
+          "--dataworks.file.transfer.source.bucket" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.source.prefix" : "${var.reload_diff_folder}/toInsert",
+          "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
+          "--dataworks.file.transfer.retention.period.amount" : "0",
+          "--dataworks.file.transfer.delete.copied.files" : "true",
+          "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+          "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+          "--dataworks.allowed.s3.file.regex" : "(?i).+.parquet$",
+          "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+          "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+          "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+          "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.move_reload_diffs_toDelete_to_archive_bucket.StepName
+    }
+  }
+
+  move_reload_diffs_toDelete_to_archive_bucket = {
+    "StepName" : "Move Reload Diffs toDelete to Archive Bucket",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_file_transfer_job,
+        "Arguments" : {
+          "--dataworks.file.transfer.source.bucket" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.source.prefix" : "${var.reload_diff_folder}/toDelete",
           "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
           "--dataworks.file.transfer.retention.period.amount" : "0",
           "--dataworks.file.transfer.delete.copied.files" : "true",
@@ -356,6 +525,48 @@ locals {
           "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
           "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
           "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.move_reload_diffs_toUpdate_to_archive_bucket.StepName
+    }
+  }
+
+  move_reload_diffs_toUpdate_to_archive_bucket = {
+    "StepName" : "Move Reload Diffs toUpdate to Archive Bucket",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_file_transfer_job,
+        "Arguments" : {
+          "--dataworks.file.transfer.source.bucket" : var.s3_temp_reload_bucket_id,
+          "--dataworks.file.source.prefix" : "${var.reload_diff_folder}/toUpdate",
+          "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
+          "--dataworks.file.transfer.retention.period.amount" : "0",
+          "--dataworks.file.transfer.delete.copied.files" : "true",
+          "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+          "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+          "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+          "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+          "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+          "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+          "--dataworks.config.key" : var.domain
+        }
+      },
+      "Next" : local.empty_raw_data.StepName
+    }
+  }
+
+  empty_raw_data = {
+    "StepName" : "Empty Raw Data",
+    "StepDefinition" : {
+      "Type" : "Task",
+      "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters" : {
+        "JobName" : var.glue_s3_data_deletion_job,
+        "Arguments" : {
+          "--dataworks.file.deletion.buckets" : var.s3_raw_bucket_id,
           "--dataworks.config.key" : var.domain
         }
       },
@@ -473,6 +684,7 @@ locals {
       "Parameters" : {
         "JobName" : var.glue_reporting_hub_cdc_jobname,
         "Arguments" : {
+          "--dataworks.clean.cdc.checkpoint" : "true",
           "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
           "--dataworks.config.key" : var.domain
         }
@@ -547,119 +759,4 @@ locals {
       "End" : true
     }
   }
-}
-
-# Data Ingest Pipeline Step Function
-module "data_ingestion_pipeline" {
-  source = "../../step_function"
-
-  enable_step_function = var.setup_data_ingestion_pipeline
-  step_function_name   = var.data_ingestion_pipeline
-  dms_task_time_out    = var.pipeline_dms_task_time_out
-
-  step_function_execution_role_arn = var.step_function_execution_role_arn
-
-  definition = var.file_transfer_in ? jsonencode({
-    "Comment" : "Data Ingestion Pipeline Step Function (File Transfer In Batch Only)",
-    "StartAt" : local.update_hive_tables.StepName,
-    "States" : {
-      (local.update_hive_tables.StepName) : local.update_hive_tables.StepDefinition,
-      (local.prepare_temp_reload_bucket_data.StepName) : local.prepare_temp_reload_bucket_data.StepDefinition,
-      (local.copy_curated_data_to_temp_reload_bucket.StepName) : local.copy_curated_data_to_temp_reload_bucket.StepDefinition,
-      (local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepName) : local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepDefinition,
-      (local.empty_landing_processing_raw_archive_structured_and_curated_data.StepName) : local.empty_landing_processing_raw_archive_structured_and_curated_data.StepDefinition,
-      (local.invoke_landing_zone_antivirus_check_lambda.StepName) : local.invoke_landing_zone_antivirus_check_lambda.StepDefinition,
-      (local.invoke_landing_zone_processing_lambda.StepName) : local.invoke_landing_zone_processing_lambda.StepDefinition,
-      (local.run_glue_batch_job.StepName) : local.run_glue_batch_job.StepDefinition,
-      (local.archive_raw_data.StepName) : local.archive_raw_data.StepDefinition,
-      (local.run_compaction_job_on_structured_zone.StepName) : local.run_compaction_job_on_structured_zone.StepDefinition,
-      (local.run_vacuum_job_on_structured_zone.StepName) : local.run_vacuum_job_on_structured_zone.StepDefinition,
-      (local.run_compaction_job_on_curated_zone.StepName) : local.run_compaction_job_on_curated_zone.StepDefinition,
-      (local.run_vacuum_job_on_curated_zone.StepName) : local.run_vacuum_job_on_curated_zone.StepDefinition,
-      (local.switch_hive_tables_for_prisons_to_curated.StepName) : local.switch_hive_tables_for_prisons_to_curated.StepDefinition,
-      (local.empty_temp_reload_bucket_data.StepName) : local.empty_temp_reload_bucket_data.StepDefinition
-    }
-    }) : var.batch_only ? jsonencode(
-    {
-      "Comment" : "Data Ingestion Pipeline Step Function (Batch Only)",
-      "StartAt" : local.stop_dms_replication_task.StepName,
-      "States" : {
-        (local.stop_dms_replication_task.StepName) : local.stop_dms_replication_task.StepDefinition,
-        (local.update_hive_tables.StepName) : local.update_hive_tables.StepDefinition,
-        (local.prepare_temp_reload_bucket_data.StepName) : local.prepare_temp_reload_bucket_data.StepDefinition,
-        (local.copy_curated_data_to_temp_reload_bucket.StepName) : local.copy_curated_data_to_temp_reload_bucket.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepName) : local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepDefinition,
-        (local.empty_raw_archive_structured_and_curated_data.StepName) : local.empty_raw_archive_structured_and_curated_data.StepDefinition,
-        (local.start_dms_replication_task.StepName) : local.start_dms_replication_task.StepDefinition,
-        (local.invoke_dms_state_control_lambda.StepName) : local.invoke_dms_state_control_lambda.StepDefinition,
-        (local.run_glue_batch_job.StepName) : local.run_glue_batch_job.StepDefinition,
-        (local.archive_raw_data.StepName) : local.archive_raw_data.StepDefinition,
-        (local.run_compaction_job_on_structured_zone.StepName) : local.run_compaction_job_on_structured_zone.StepDefinition,
-        (local.run_vacuum_job_on_structured_zone.StepName) : local.run_vacuum_job_on_structured_zone.StepDefinition,
-        (local.run_compaction_job_on_curated_zone.StepName) : local.run_compaction_job_on_curated_zone.StepDefinition,
-        (local.run_vacuum_job_on_curated_zone.StepName) : local.run_vacuum_job_on_curated_zone.StepDefinition,
-        (local.run_reconciliation_job.StepName) : local.run_reconciliation_job.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_curated.StepName) : local.switch_hive_tables_for_prisons_to_curated.StepDefinition,
-        (local.empty_temp_reload_bucket_data.StepName) : local.empty_temp_reload_bucket_data.StepDefinition
-      }
-    }
-    ) : var.split_pipeline ? jsonencode(
-    {
-      "Comment" : "Data Ingestion Pipeline Step Function (With Separated Full-Load and CDC Tasks)",
-      "StartAt" : local.deactivate_archive_trigger.StepName,
-      "States" : {
-        (local.deactivate_archive_trigger.StepName) : local.deactivate_archive_trigger.StepDefinition,
-        (local.stop_archive_job.StepName) : local.stop_archive_job.StepDefinition,
-        (local.stop_dms_cdc_replication_task.StepName) : local.stop_dms_cdc_replication_task.StepDefinition,
-        (local.stop_glue_streaming_job.StepName) : local.stop_glue_streaming_job.StepDefinition,
-        (local.update_hive_tables.StepName) : local.update_hive_tables.StepDefinition,
-        (local.prepare_temp_reload_bucket_data.StepName) : local.prepare_temp_reload_bucket_data.StepDefinition,
-        (local.copy_curated_data_to_temp_reload_bucket.StepName) : local.copy_curated_data_to_temp_reload_bucket.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepName) : local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepDefinition,
-        (local.empty_raw_archive_structured_and_curated_data.StepName) : local.empty_raw_archive_structured_and_curated_data.StepDefinition,
-        (local.start_dms_replication_task.StepName) : local.start_dms_replication_task.StepDefinition,
-        (local.invoke_dms_state_control_lambda.StepName) : local.invoke_dms_state_control_lambda.StepDefinition,
-        (local.set_dms_cdc_replication_task_start_time.StepName) : local.set_dms_cdc_replication_task_start_time.StepDefinition,
-        (local.run_glue_batch_job.StepName) : local.run_glue_batch_job.StepDefinition,
-        (local.archive_raw_data.StepName) : local.archive_raw_data.StepDefinition,
-        (local.start_dms_cdc_replication_task.StepName) : local.start_dms_cdc_replication_task.StepDefinition,
-        (local.start_glue_streaming_job.StepName) : local.start_glue_streaming_job.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_curated.StepName) : local.switch_hive_tables_for_prisons_to_curated.StepDefinition,
-        (local.reactivate_archive_trigger.StepName) : local.reactivate_archive_trigger.StepDefinition,
-        (local.empty_temp_reload_bucket_data.StepName) : local.empty_temp_reload_bucket_data.StepDefinition,
-      }
-    }
-    ) : jsonencode(
-    {
-      "Comment" : "Data Ingestion Pipeline Step Function",
-      "StartAt" : local.deactivate_archive_trigger.StepName,
-      "States" : {
-        (local.deactivate_archive_trigger.StepName) : local.deactivate_archive_trigger.StepDefinition,
-        (local.stop_archive_job.StepName) : local.stop_archive_job.StepDefinition,
-        (local.stop_dms_replication_task.StepName) : local.stop_dms_replication_task.StepDefinition,
-        (local.stop_glue_streaming_job.StepName) : local.stop_glue_streaming_job.StepDefinition,
-        (local.update_hive_tables.StepName) : local.update_hive_tables.StepDefinition,
-        (local.prepare_temp_reload_bucket_data.StepName) : local.prepare_temp_reload_bucket_data.StepDefinition,
-        (local.copy_curated_data_to_temp_reload_bucket.StepName) : local.copy_curated_data_to_temp_reload_bucket.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepName) : local.switch_hive_tables_for_prisons_to_temp_reload_bucket.StepDefinition,
-        (local.empty_raw_archive_structured_and_curated_data.StepName) : local.empty_raw_archive_structured_and_curated_data.StepDefinition,
-        (local.start_dms_replication_task.StepName) : local.start_dms_replication_task.StepDefinition,
-        (local.invoke_dms_state_control_lambda.StepName) : local.invoke_dms_state_control_lambda.StepDefinition,
-        (local.run_glue_batch_job.StepName) : local.run_glue_batch_job.StepDefinition,
-        (local.archive_raw_data.StepName) : local.archive_raw_data.StepDefinition,
-        (local.run_compaction_job_on_structured_zone.StepName) : local.run_compaction_job_on_structured_zone.StepDefinition,
-        (local.run_vacuum_job_on_structured_zone.StepName) : local.run_vacuum_job_on_structured_zone.StepDefinition,
-        (local.run_compaction_job_on_curated_zone.StepName) : local.run_compaction_job_on_curated_zone.StepDefinition,
-        (local.run_vacuum_job_on_curated_zone.StepName) : local.run_vacuum_job_on_curated_zone.StepDefinition,
-        (local.resume_dms_replication_task.StepName) : local.resume_dms_replication_task.StepDefinition,
-        (local.start_glue_streaming_job.StepName) : local.start_glue_streaming_job.StepDefinition,
-        (local.switch_hive_tables_for_prisons_to_curated.StepName) : local.switch_hive_tables_for_prisons_to_curated.StepDefinition,
-        (local.reactivate_archive_trigger.StepName) : local.reactivate_archive_trigger.StepDefinition,
-        (local.empty_temp_reload_bucket_data.StepName) : local.empty_temp_reload_bucket_data.StepDefinition,
-      }
-    }
-  )
-
-  tags = var.tags
-
 }

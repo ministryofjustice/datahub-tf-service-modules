@@ -18,8 +18,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_trigger_activation_job,
             "Arguments" : {
-              "--dwh.glue.trigger.name" : var.archive_job_trigger_name,
-              "--dwh.glue.trigger.activate" : "false"
+              "--dataworks.glue.trigger.name" : var.archive_job_trigger_name,
+              "--dataworks.glue.trigger.activate" : "false"
             }
           },
           "Next" : "Stop Archive Job"
@@ -30,7 +30,7 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_stop_glue_instance_job,
             "Arguments" : {
-              "--dwh.stop.glue.instance.job.name" : var.glue_archive_job
+              "--dataworks.stop.glue.instance.job.name" : var.glue_archive_job
             }
           },
           "Next" : "Stop DMS Replication Task"
@@ -41,7 +41,7 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.stop_dms_task_job,
             "Arguments" : {
-              "--dwh.dms.replication.task.id" : var.replication_task_id
+              "--dataworks.dms.replication.task.id" : var.replication_task_id
             }
           },
           "Next" : "Check All Pending Files Have Been Processed"
@@ -52,8 +52,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_unprocessed_raw_files_check_job,
             "Arguments" : {
-              "--dwh.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
-              "--dwh.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts)
+              "--dataworks.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
+              "--dataworks.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts)
             }
           },
           "Next" : "Stop Glue Streaming Job"
@@ -64,7 +64,7 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_stop_glue_instance_job,
             "Arguments" : {
-              "--dwh.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
+              "--dataworks.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
             }
           },
           "Next" : "Prepare Temp Reload Bucket Data"
@@ -75,8 +75,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_data_deletion_job,
             "Arguments" : {
-              "--dwh.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Copy Curated Data to Temp-Reload Bucket"
@@ -87,14 +87,16 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_file_transfer_job,
             "Arguments" : {
-              "--dwh.file.transfer.source.bucket" : var.s3_curated_bucket_id,
-              "--dwh.file.transfer.destination.bucket" : var.s3_temp_reload_bucket_id,
-              "--dwh.file.transfer.delete.copied.files" : "false",
-              "--dwh.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
-              "--dwh.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
-              "--dwh.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.transfer.source.bucket" : var.s3_curated_bucket_id,
+              "--dataworks.file.transfer.destination.bucket" : var.s3_temp_reload_bucket_id,
+              "--dataworks.file.transfer.delete.copied.files" : "false",
+              "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+              "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+              "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+              "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+              "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Switch Hive Tables for Prisons to Temp-Reload Bucket"
@@ -105,8 +107,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_switch_prisons_hive_data_location_job,
             "Arguments" : {
-              "--dwh.prisons.data.switch.target.s3.path" : "s3://${var.s3_temp_reload_bucket_id}",
-              "--dwh.config.key" : var.domain
+              "--dataworks.prisons.data.switch.target.s3.path" : "s3://${var.s3_temp_reload_bucket_id}",
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Empty Structured and Curated Data"
@@ -117,8 +119,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_data_deletion_job,
             "Arguments" : {
-              "--dwh.file.deletion.buckets" : "${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.deletion.buckets" : "${var.s3_structured_bucket_id},${var.s3_curated_bucket_id}",
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Archive Remaining Raw Files"
@@ -129,14 +131,16 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_file_transfer_job,
             "Arguments" : {
-              "--dwh.file.transfer.source.bucket" : var.s3_raw_bucket_id,
-              "--dwh.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
-              "--dwh.file.transfer.delete.copied.files" : "true",
-              "--dwh.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
-              "--dwh.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
-              "--dwh.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.transfer.source.bucket" : var.s3_raw_bucket_id,
+              "--dataworks.file.transfer.destination.bucket" : var.s3_raw_archive_bucket_id,
+              "--dataworks.file.transfer.delete.copied.files" : "true",
+              "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+              "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+              "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+              "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+              "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Copy Archived Data to Raw Bucket"
@@ -147,15 +151,17 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_file_transfer_job,
             "Arguments" : {
-              "--dwh.file.transfer.source.bucket" : var.s3_raw_archive_bucket_id,
-              "--dwh.file.transfer.destination.bucket" : var.s3_raw_bucket_id,
-              "--dwh.file.transfer.retention.period.amount" : "0",
-              "--dwh.file.transfer.delete.copied.files" : "false",
-              "--dwh.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
-              "--dwh.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
-              "--dwh.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.transfer.source.bucket" : var.s3_raw_archive_bucket_id,
+              "--dataworks.file.transfer.destination.bucket" : var.s3_raw_bucket_id,
+              "--dataworks.file.transfer.retention.period.amount" : "0",
+              "--dataworks.file.transfer.delete.copied.files" : "false",
+              "--dataworks.file.transfer.use.default.parallelism" : tostring(var.file_transfer_use_default_parallelism),
+              "--dataworks.file.transfer.parallelism" : tostring(var.file_transfer_parallelism),
+              "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+              "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+              "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis),
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Start Glue Batch Job"
@@ -166,9 +172,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_reporting_hub_batch_jobname,
             "Arguments" : {
-              "--dwh.batch.load.fileglobpattern" : "{part-*.snappy.parquet,LOAD*parquet}",
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.batch.load.fileglobpattern" : "{part-*.snappy.parquet,LOAD*parquet}",
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Run Compaction Job on Structured Zone"
@@ -179,9 +185,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_compaction_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_structured_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_structured_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.compaction_structured_num_workers,
             "WorkerType" : var.compaction_structured_worker_type
@@ -194,9 +200,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_retention_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_structured_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_structured_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.retention_structured_num_workers,
             "WorkerType" : var.retention_structured_worker_type
@@ -209,9 +215,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_compaction_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_curated_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_curated_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.compaction_curated_num_workers,
             "WorkerType" : var.compaction_curated_worker_type
@@ -224,9 +230,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_retention_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_curated_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_curated_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.retention_curated_num_workers,
             "WorkerType" : var.retention_curated_worker_type
@@ -239,9 +245,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_reporting_hub_cdc_jobname,
             "Arguments" : {
-              "--dwh.clean.cdc.checkpoint" : "true",
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.clean.cdc.checkpoint" : "true",
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Check All Files Have Been Replayed"
@@ -252,9 +258,9 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_unprocessed_raw_files_check_job,
             "Arguments" : {
-              "--dwh.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
-              "--dwh.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts),
-              "--dwh.allowed.s3.file.regex" : "\\d+-\\d+.parquet"
+              "--dataworks.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
+              "--dataworks.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts),
+              "--dataworks.allowed.s3.file.regex" : "\\d+-\\d+.parquet"
             }
           },
           "Next" : "Empty Raw Data"
@@ -265,8 +271,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_data_deletion_job,
             "Arguments" : {
-              "--dwh.file.deletion.buckets" : var.s3_raw_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.deletion.buckets" : var.s3_raw_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Resume DMS Replication Task"
@@ -286,8 +292,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_switch_prisons_hive_data_location_job,
             "Arguments" : {
-              "--dwh.prisons.data.switch.target.s3.path" : "s3://${var.s3_curated_bucket_id}",
-              "--dwh.config.key" : var.domain
+              "--dataworks.prisons.data.switch.target.s3.path" : "s3://${var.s3_curated_bucket_id}",
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Reactivate Archive Trigger"
@@ -298,8 +304,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_trigger_activation_job,
             "Arguments" : {
-              "--dwh.glue.trigger.name" : var.archive_job_trigger_name,
-              "--dwh.glue.trigger.activate" : "true"
+              "--dataworks.glue.trigger.name" : var.archive_job_trigger_name,
+              "--dataworks.glue.trigger.activate" : "true"
             }
           },
           "Next" : "Empty Temp Reload Bucket Data"
@@ -310,8 +316,8 @@ module "replay_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_s3_data_deletion_job,
             "Arguments" : {
-              "--dwh.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.file.deletion.buckets" : var.s3_temp_reload_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "End" : true

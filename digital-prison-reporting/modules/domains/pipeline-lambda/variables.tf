@@ -26,7 +26,7 @@ variable "reporting_lambda_code_s3_key" {
 variable "step_function_notification_lambda_handler" {
   description = "Notification Lambda Handler"
   type        = string
-  default     = "modulardata.dataworks.lambda.StepFunctionDMSNotificationLambda::handleRequest"
+  default     = "uk.gov.justice.digital.lambda.StepFunctionDMSNotificationLambda::handleRequest"
 }
 
 variable "step_function_notification_lambda_runtime" {

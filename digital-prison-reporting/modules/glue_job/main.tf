@@ -17,7 +17,7 @@ locals {
   tags = merge(
     var.tags,
     {
-      Dept = "dataworks-hub"
+      Dept = "Digital-Prison-Reporting"
     }
   )
 }
@@ -84,117 +84,111 @@ resource "aws_iam_role" "glue-service-role" {
 EOF
 }
 
-data "aws_iam_policy_document" "extra-policy-document" {
-  #checkov:skip=CKV_AWS_356: "Ensure no IAM policies documents allow "*" as a statement's resource for restrictable actions. TO DO Will be addressed as part of https://dsdmoj.atlassian.net/browse/DWH2-1083"
+resource "aws_iam_policy" "additional-policy" {
+  #checkov:skip=CKV_AWS_356: "Ensure no IAM policies documents allow "*" as a statement's resource for restrictable actions. TO DO Will be addressed as part of https://dsdmoj.atlassian.net/browse/DPR2-1083"
   #checkov:skip=CKV_AWS_109: "Ensure IAM policies does not allow permissions management / resource exposure without constraints"
   #checkov:skip=CKV_AWS_111: "Ensure IAM policies does not allow write access without constraints"
   #checkov:skip=CKV_AWS_110: "Ensure IAM policies does not allow privilege escalation"
 
-  statement {
-    actions = [
-      "s3:*"
-    ]
-    resources = [
-      "arn:aws:s3:::${var.project_id}-*/*",
-      "arn:aws:s3:::${var.project_id}-*"
-    ]
-  }
-  # https://docs.aws.amazon.com/glue/latest/dg/monitor-continuous-logging-enable.html#monitor-continuous-logging-encrypt-log-data
-  statement {
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:AssociateKmsKey"
-    ]
-    resources = [
-      "arn:aws:logs:*:*:/aws-glue/*"
-    ]
-  }
-  statement {
-    actions = [
-      "glue:*",
-      "iam:ListRolePolicies",
-      "iam:GetRole",
-      "iam:GetRolePolicy",
-      "cloudwatch:PutMetricData",
-      "sqs:*" # Needs Fixing
-    ]
-    resources = [
-      "*"
-    ]
-  }
-  statement {
-    actions = [
-      "dms:DescribeTableStatistics",
-      "dms:DescribeReplicationTasks",
-      "dms:StopReplicationTask"
-    ]
-    resources = [
-      "arn:aws:dms:${var.region}:${var.account}:*:*"
-    ]
-  }
-  statement {
-    actions = [
-      "kinesis:DescribeLimits",
-      "kinesis:DescribeStream",
-      "kinesis:GetRecords",
-      "kinesis:GetShardIterator",
-      "kinesis:SubscribeToShard",
-      "kinesis:ListShards"
-    ]
-    resources = [
-      "arn:aws:kinesis:${var.region}:${var.account}:stream/${var.project_id}-*"
-    ]
-  }
-  statement {
-    actions = [
-      "secretsmanager:GetSecretValue",
-      "secretsmanager:DescribeSecret"
-    ]
-    resources = concat(var.additional_secret_arns, [
-      "arn:aws:secretsmanager:${var.region}:${var.account}:secret:${var.project_id}-redshift-secret-*",
-      "arn:aws:secretsmanager:${var.region}:${var.account}:secret:external/${var.project_id}-dps-*"
-    ])
-  }
-  statement {
-    actions = [
-      "kms:Encrypt*",
-      "kms:Decrypt*",
-      "kms:ReEncrypt*",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey"
-    ]
-    resources = [
-      "arn:aws:kms:*:${var.account}:key/*"
-    ]
-  }
-  statement {
-    actions = [
-      "dynamodb:BatchGet*",
-      "dynamodb:DescribeStream",
-      "dynamodb:DescribeTable",
-      "dynamodb:Get*",
-      "dynamodb:Query",
-      "dynamodb:Scan",
-      "dynamodb:BatchWrite*",
-      "dynamodb:CreateTable",
-      "dynamodb:Delete*",
-      "dynamodb:Update*",
-      "dynamodb:PutItem"
-    ]
-    resources = [
-      "arn:aws:dynamodb:${var.region}:${var.account}:table/dwh-*"
-    ]
-  }
-}
-
-resource "aws_iam_policy" "additional-policy" {
   count = var.create_role && var.create_job ? 1 : 0
 
   name        = "${var.name}-policy"
   description = "Extra Policy for AWS Glue Job"
-  policy      = data.aws_iam_policy_document.extra-policy-document.json
+  policy = jsonencode(
+    {
+      Statement = [
+        {
+          Action = [
+            "s3:PutObject",
+            "s3:ListBucket",
+            "s3:GetObjectAcl",
+            "s3:GetObject",
+            "s3:GetBucketLocation",
+            "s3:DeleteObject",
+          ]
+          Effect = "Allow"
+          Resource = [
+            "arn:aws:s3:::${var.project_id}-*/*",
+            "arn:aws:s3:::${var.project_id}-*",
+          ]
+        },
+        {
+          Action = [
+            "logs:PutLogEvents",
+            "logs:CreateLogStream",
+            "logs:CreateLogGroup",
+            "logs:AssociateKmsKey",
+          ]
+          Effect   = "Allow"
+          Resource = "arn:aws:logs:*:*:/aws-glue/*"
+        },
+        {
+          Action = [
+            "sqs:*",
+            "iam:ListRolePolicies",
+            "iam:GetRolePolicy",
+            "iam:GetRole",
+            "glue:*",
+            "cloudwatch:PutMetricData",
+          ]
+          Effect   = "Allow"
+          Resource = "*"
+        },
+        {
+          Action = [
+            "dms:StopReplicationTask",
+            "dms:ModifyReplicationTask",
+            "dms:DescribeTableStatistics",
+            "dms:DescribeReplicationTasks",
+          ]
+          Effect   = "Allow"
+          Resource = "arn:aws:dms:${var.region}:${var.account}:*:*"
+        },
+        {
+          Action = [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:DescribeSecret",
+          ]
+          Effect = "Allow"
+          Resource = concat(var.additional_secret_arns, [
+            "arn:aws:secretsmanager:${var.region}:${var.account}:secret:external/${var.project_id}-dps-*",
+            "arn:aws:secretsmanager:${var.region}:${var.account}:secret:${var.project_id}-redshift-secret-*",
+          ])
+        },
+        {
+          Action = [
+            "kms:ReEncrypt*",
+            "kms:GenerateDataKey*",
+            "kms:Encrypt*",
+            "kms:DescribeKey",
+            "kms:Decrypt*",
+          ]
+          Effect   = "Allow"
+          Resource = "arn:aws:kms:*:${var.account}:key/*"
+        },
+        {
+          Action = [
+            "dynamodb:Update*",
+            "dynamodb:Scan",
+            "dynamodb:Query",
+            "dynamodb:PutItem",
+            "dynamodb:Get*",
+            "dynamodb:DescribeTable",
+            "dynamodb:DescribeStream",
+            "dynamodb:Delete*",
+            "dynamodb:CreateTable",
+            "dynamodb:BatchWrite*",
+            "dynamodb:BatchGet*",
+          ]
+          Effect   = "Allow"
+          Resource = "arn:aws:dynamodb:${var.region}:${var.account}:table/dpr-*"
+        },
+      ]
+      Version = "2012-10-17"
+    }
+  )
+
+  tags = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "glue_policies" {
@@ -259,7 +253,7 @@ resource "aws_cloudwatch_log_group" "continuous_log" {
 }
 
 resource "aws_glue_security_configuration" "sec_cfg" {
-  #checkov:skip=CKV_AWS_99: "Ensure Glue Security Configuration Encryption is enabled. TODO Will be addressed as part of https://dsdmoj.atlassian.net/browse/DWH2-1083"
+  #checkov:skip=CKV_AWS_99: "Ensure Glue Security Configuration Encryption is enabled. TODO Will be addressed as part of https://dsdmoj.atlassian.net/browse/DPR2-1083"
 
   count = var.create_security_configuration && var.create_job ? 1 : 0
   name  = "${var.short_name}-sec-config"

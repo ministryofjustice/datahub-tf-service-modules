@@ -18,7 +18,7 @@ module "cdc_stop_pipeline" {
           "Parameters" : {
             "JobName" : var.stop_dms_task_job,
             "Arguments" : {
-              "--dwh.dms.replication.task.id" : var.replication_task_id
+              "--dataworks.dms.replication.task.id" : var.replication_task_id
             }
           },
           "Next" : "Check All Pending Files Have Been Processed"
@@ -29,8 +29,8 @@ module "cdc_stop_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_unprocessed_raw_files_check_job,
             "Arguments" : {
-              "--dwh.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
-              "--dwh.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts)
+              "--dataworks.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
+              "--dataworks.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts)
             }
           },
           "Next" : "Stop Glue Streaming Job"
@@ -41,7 +41,7 @@ module "cdc_stop_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_stop_glue_instance_job,
             "Arguments" : {
-              "--dwh.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
+              "--dataworks.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
             }
           },
           "End" : true

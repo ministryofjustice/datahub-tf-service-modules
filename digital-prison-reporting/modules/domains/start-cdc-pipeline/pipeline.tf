@@ -18,7 +18,7 @@ module "cdc_start_pipeline" {
           "Parameters" : {
             "JobName" : var.stop_dms_task_job,
             "Arguments" : {
-              "--dwh.dms.replication.task.id" : var.replication_task_id
+              "--dataworks.dms.replication.task.id" : var.replication_task_id
             }
           },
           "Next" : "Stop Glue Streaming Job"
@@ -29,7 +29,7 @@ module "cdc_start_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_stop_glue_instance_job,
             "Arguments" : {
-              "--dwh.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
+              "--dataworks.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
             }
           },
           "Next" : "Start Glue Streaming Job"
@@ -40,8 +40,8 @@ module "cdc_start_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_reporting_hub_cdc_jobname,
             "Arguments" : {
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             }
           },
           "Next" : "Resume DMS Replication Task"

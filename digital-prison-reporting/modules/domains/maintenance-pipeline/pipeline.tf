@@ -11,15 +11,38 @@ module "maintenance_pipeline" {
   definition = jsonencode(
     {
       "Comment" : "Maintenance Pipeline Step Function",
-      "StartAt" : "Stop DMS Replication Task",
+      "StartAt" : "Deactivate Archive Trigger",
       "States" : {
+        "Deactivate Archive Trigger" : {
+          "Type" : "Task",
+          "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+          "Parameters" : {
+            "JobName" : var.glue_trigger_activation_job,
+            "Arguments" : {
+              "--dataworks.glue.trigger.name" : var.archive_job_trigger_name,
+              "--dataworks.glue.trigger.activate" : "false"
+            }
+          },
+          "Next" : "Stop Archive Job"
+        },
+        "Stop Archive Job" : {
+          "Type" : "Task",
+          "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+          "Parameters" : {
+            "JobName" : var.glue_stop_glue_instance_job,
+            "Arguments" : {
+              "--dataworks.stop.glue.instance.job.name" : var.glue_archive_job
+            }
+          },
+          "Next" : "Stop DMS Replication Task"
+        },
         "Stop DMS Replication Task" : {
           "Type" : "Task",
           "Resource" : "arn:aws:states:::glue:startJobRun.sync",
           "Parameters" : {
             "JobName" : var.stop_dms_task_job,
             "Arguments" : {
-              "--dwh.dms.replication.task.id" : var.replication_task_id
+              "--dataworks.dms.replication.task.id" : var.replication_task_id
             }
           },
           "Next" : "Check All Pending Files Have Been Processed"
@@ -30,11 +53,11 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_unprocessed_raw_files_check_job,
             "Arguments" : {
-              "--dwh.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
-              "--dwh.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts),
-              "--dwh.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
-              "--dwh.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
-              "--dwh.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis)
+              "--dataworks.orchestration.wait.interval.seconds" : tostring(var.processed_files_check_wait_interval_seconds),
+              "--dataworks.orchestration.max.attempts" : tostring(var.processed_files_check_max_attempts),
+              "--dataworks.datastorage.retry.maxAttempts" : tostring(var.glue_s3_max_attempts),
+              "--dataworks.datastorage.retry.minWaitMillis" : tostring(var.glue_s3_retry_min_wait_millis),
+              "--dataworks.datastorage.retry.maxWaitMillis" : tostring(var.glue_s3_retry_max_wait_millis)
             }
           },
           "Next" : "Stop Glue Streaming Job"
@@ -45,7 +68,7 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_stop_glue_instance_job,
             "Arguments" : {
-              "--dwh.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
+              "--dataworks.stop.glue.instance.job.name" : var.glue_reporting_hub_cdc_jobname
             }
           },
           "Next" : "Run Compaction Job on Structured Zone"
@@ -56,9 +79,9 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_compaction_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_structured_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_structured_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.compaction_structured_num_workers,
             "WorkerType" : var.compaction_structured_worker_type
@@ -71,9 +94,9 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_retention_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_structured_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_structured_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.retention_structured_num_workers,
             "WorkerType" : var.retention_structured_worker_type
@@ -86,9 +109,9 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_compaction_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_curated_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_curated_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.compaction_curated_num_workers,
             "WorkerType" : var.compaction_curated_worker_type
@@ -101,12 +124,23 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_maintenance_retention_job,
             "Arguments" : {
-              "--dwh.maintenance.root.path" : var.s3_curated_path,
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.maintenance.root.path" : var.s3_curated_path,
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
             },
             "NumberOfWorkers" : var.retention_curated_num_workers,
             "WorkerType" : var.retention_curated_worker_type
+          },
+          "Next" : "Archive Raw Data"
+        },
+        "Archive Raw Data" : {
+          "Type" : "Task",
+          "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+          "Parameters" : {
+            "JobName" : var.glue_archive_job,
+            "Arguments" : {
+              "--dataworks.raw.file.retention.period.amount" : "0"
+            }
           },
           "Next" : "Resume DMS Replication Task"
         },
@@ -125,8 +159,20 @@ module "maintenance_pipeline" {
           "Parameters" : {
             "JobName" : var.glue_reporting_hub_cdc_jobname,
             "Arguments" : {
-              "--dwh.config.s3.bucket" : var.s3_glue_bucket_id,
-              "--dwh.config.key" : var.domain
+              "--dataworks.config.s3.bucket" : var.s3_glue_bucket_id,
+              "--dataworks.config.key" : var.domain
+            }
+          },
+          "Next" : "Reactivate Archive Trigger"
+        },
+        "Reactivate Archive Trigger" : {
+          "Type" : "Task",
+          "Resource" : "arn:aws:states:::glue:startJobRun.sync",
+          "Parameters" : {
+            "JobName" : var.glue_trigger_activation_job,
+            "Arguments" : {
+              "--dataworks.glue.trigger.name" : var.archive_job_trigger_name,
+              "--dataworks.glue.trigger.activate" : "true"
             }
           },
           "End" : true

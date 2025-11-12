@@ -26,7 +26,7 @@ variable "lambda_code_s3_key" {
 variable "lambda_handler" {
   description = "Notification Lambda Handler"
   type        = string
-  default     = "modulardata.dataworks.lambda.PostgresTickleLambda::handleRequest"
+  default     = "uk.gov.justice.digital.lambda.PostgresTickleLambda::handleRequest"
 }
 
 variable "lambda_runtime" {

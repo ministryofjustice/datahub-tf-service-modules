@@ -1,6 +1,7 @@
 # Lambda which notifies step function when DMS task stops
 module "step_function_notification_lambda" {
-  source = "../../lambdas/generic"
+  #HC, 17th JUNE#### source = "../../lambdas/generic"
+  source = "git::https://github.com/ministryofjustice/modernisation-platform-environments.git//terraform/environments/digital-prison-reporting/modules/lambdas/generic?ref=main"
 
   enable_lambda = var.setup_step_function_notification_lambda
   name          = var.step_function_notification_lambda
@@ -30,7 +31,9 @@ module "step_function_notification_lambda" {
 }
 
 module "step_function_notification_lambda_trigger" {
-  source = "../../lambda_trigger"
+  #HC, 17th JUNE#### source = "../../lambda_trigger"
+
+  source = "git::https://github.com/ministryofjustice/modernisation-platform-environments.git//terraform/environments/digital-prison-reporting/modules/lambda_trigger?ref=main"
 
   enable_lambda_trigger = var.setup_step_function_notification_lambda
 
@@ -43,7 +46,8 @@ module "step_function_notification_lambda_trigger" {
       "source" : ["aws.dms"],
       "detail-type" : ["DMS Replication Task State Change"],
       "detail" : {
-        "eventId" : ["DMS-EVENT-0079"] # https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Events.html
+        "type" : ["REPLICATION_TASK"],
+        "eventType" : ["REPLICATION_TASK_STOPPED", "REPLICATION_TASK_FAILED"]
       }
     }
   )

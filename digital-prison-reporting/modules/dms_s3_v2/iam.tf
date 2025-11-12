@@ -109,8 +109,8 @@ resource "aws_iam_policy" "dms-operator-s3-policy" {
                 "s3:GetBucketLocation"
             ],
             "Resource": [
-                "arn:aws:s3::*:dwh-*/*",
-                "arn:aws:s3::*:dwh-*"
+                "arn:aws:s3::*:dataworks-*/*",
+                "arn:aws:s3::*:dataworks-*"
             ]
         },
         {

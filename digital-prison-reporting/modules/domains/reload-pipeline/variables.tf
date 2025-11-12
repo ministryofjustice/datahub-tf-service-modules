@@ -4,10 +4,32 @@ variable "setup_reload_pipeline" {
   default     = false
 }
 
+variable "file_transfer_in" {
+  description = "Determines if the pipeline is for File Transfer In, True or False?"
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = var.file_transfer_in ? var.batch_only : true
+    error_message = "File Transfer In pipeline can only be created when batch_only = true"
+  }
+}
+
 variable "batch_only" {
   description = "Determines if the pipeline is batch only, True or False?"
   type        = bool
   default     = false
+}
+
+variable "split_pipeline" {
+  description = "Determines if the pipeline is split into a Full-Load and a separate CDC tasks, True or False?"
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = var.batch_only ? var.split_pipeline == false : true
+    error_message = "split_pipeline can only be 'true' when batch_only = false"
+  }
 }
 
 variable "reload_pipeline" {
@@ -19,6 +41,18 @@ variable "pipeline_dms_task_time_out" {
   description = "DMS Task Timeout"
   type        = number
   default     = 86400 # 24 hours
+}
+
+variable "landing_zone_antivirus_check_lambda_timeout_in_seconds" {
+  description = "Timeout for the Landing Zone Antivirus Check Lambda in seconds"
+  type        = number
+  default     = 900 # 15 minutes
+}
+
+variable "landing_zone_processing_lambda_timeout_in_seconds" {
+  description = "Landing zone processing Lambda timeout in seconds."
+  type        = number
+  default     = 900 # 15 minutes
 }
 
 variable "step_function_execution_role_arn" {
@@ -81,9 +115,34 @@ variable "glue_s3_data_deletion_job" {
   type        = string
 }
 
+variable "archive_backfill_job" {
+  description = "Name of glue job which backfills the archive data"
+  type        = string
+}
+
 variable "dms_replication_task_arn" {
   description = "ARN of the replication task"
   type        = string
+}
+
+variable "dms_cdc_replication_task_arn" {
+  description = "ARN of the CDC replication task"
+  type        = string
+
+  validation {
+    condition     = var.split_pipeline == true ? var.dms_cdc_replication_task_arn != null : var.dms_cdc_replication_task_arn == null
+    error_message = "dms_cdc_replication_task_arn is only allowed when split_pipeline = true"
+  }
+}
+
+variable "cdc_replication_task_id" {
+  description = "ID of the CDC replication task"
+  type        = string
+
+  validation {
+    condition     = var.split_pipeline == true ? var.cdc_replication_task_id != null : var.cdc_replication_task_id == null
+    error_message = "cdc_replication_task_id is only allowed when split_pipeline = true"
+  }
 }
 
 variable "replication_task_id" {
@@ -94,6 +153,32 @@ variable "replication_task_id" {
 variable "pipeline_notification_lambda_function" {
   description = "Pipeline Notification Lambda Name"
   type        = string
+}
+
+variable "landing_zone_antivirus_check_lambda_function" {
+  description = "Landing Zone Antivirus Check Lambda Name"
+  type        = string
+}
+
+variable "landing_zone_processing_lambda_function" {
+  description = "Landing Zone Processing Lambda Name"
+  type        = string
+}
+
+variable "pipeline_notification_lambda_function_ignore_dms_failure" {
+  description = "Pipeline notification lambda function ignores DMS task failures"
+  type        = bool
+  default     = false
+}
+
+variable "set_cdc_dms_start_time_job" {
+  description = "Name of the Glue job which sets the start time of the CDC DMS task"
+  type        = string
+
+  validation {
+    condition     = var.split_pipeline == true ? var.set_cdc_dms_start_time_job != null : var.set_cdc_dms_start_time_job == null
+    error_message = "set_cdc_dms_start_time_job is only allowed when split_pipeline = true"
+  }
 }
 
 variable "glue_reporting_hub_batch_jobname" {
@@ -135,6 +220,16 @@ variable "glue_reconciliation_job_num_workers" {
 
 variable "s3_glue_bucket_id" {
   description = "S3, Glue Bucket ID"
+  type        = string
+}
+
+variable "s3_landing_bucket_id" {
+  description = "S3, Landing Processing Bucket ID"
+  type        = string
+}
+
+variable "s3_landing_processing_bucket_id" {
+  description = "S3, Landing Processing Bucket ID"
   type        = string
 }
 
@@ -296,6 +391,16 @@ variable "glue_s3_retry_max_wait_millis" {
   type        = number
 }
 
+variable "file_transfer_use_default_parallelism" {
+  description = "Boolean flag to use number of default parallelism (i.e cores - 1) when transferring files"
+  type        = bool
+}
+
+variable "file_transfer_parallelism" {
+  description = "Specifies the number of threads to use for transferring files in parallel"
+  type        = number
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}
@@ -311,4 +416,21 @@ variable "reload_diff_folder" {
   type        = string
   default     = "diffs"
   description = "Folder for the reload diff"
+}
+
+variable "archive_backfill_folder" {
+  type        = string
+  default     = "backfilled-archive"
+  description = "Folder for the reload diff"
+}
+
+variable "enable_archive_backfill" {
+  type        = bool
+  default     = false
+  description = "Boolean flag to backfill the archive before computing the reload diff during the reload process"
+}
+
+variable "domain_s3_prefix" {
+  type        = string
+  description = "The prefix used by the Domain in S3"
 }
